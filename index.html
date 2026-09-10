@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="light" data-auth="out">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="description" content="Today Planner — 오늘을 위한 작은 습관. 오늘 반드시 끝내야 할 일을 한눈에 보여주는 모던한 개인 업무 대시보드." />
+  <meta name="theme-color" content="#f4f5f7" />
+  <title>Today Planner</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%232f6df6'/%3E%3Ctext x='50' y='68' font-size='56' text-anchor='middle' fill='white' font-family='system-ui,sans-serif' font-weight='700'%3ET%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">본문으로 건너뛰기</a>
+
+  <!-- Login gate — shown until <html data-auth="in"> (see js/auth.js) -->
+  <div class="login" id="loginScreen">
+    <div class="login__card" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+      <div class="login__brand">
+        <span class="login__logo" aria-hidden="true">T</span>
+        <h1 class="login__title" id="loginTitle">Today Planner</h1>
+        <p class="login__subtitle">오늘의 업무를 관리하세요</p>
+      </div>
+
+      <form class="login__form" id="loginForm" novalidate>
+        <div class="field">
+          <label class="field__label" for="loginUsername">아이디</label>
+          <input type="text" id="loginUsername" name="username" autocomplete="username"
+                 autocapitalize="none" autocorrect="off" spellcheck="false" autofocus />
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="loginPassword">비밀번호</label>
+          <div class="login__password">
+            <input type="password" id="loginPassword" name="password" autocomplete="current-password" />
+            <button type="button" class="login__reveal" id="loginReveal"
+                    aria-label="비밀번호 표시" aria-pressed="false">
+              <span aria-hidden="true">👁</span>
+            </button>
+          </div>
+        </div>
+
+        <label class="login__remember">
+          <input type="checkbox" id="loginRemember" />
+          <span>로그인 상태 유지</span>
+        </label>
+
+        <p class="login__error" id="loginError" role="alert" hidden>
+          아이디 또는 비밀번호가 올바르지 않습니다.
+        </p>
+
+        <button type="submit" class="btn btn--primary btn--block" id="loginSubmit">로그인</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="app">
+    <!-- Mobile top bar -->
+    <header class="topbar">
+      <button type="button" class="icon-btn" id="navToggle" aria-label="메뉴 열기" aria-expanded="false" aria-controls="sidebar">
+        <span class="topbar__burger" aria-hidden="true"></span>
+      </button>
+      <span class="topbar__brand">Today&nbsp;Planner</span>
+      <button type="button" class="icon-btn" id="topbarTheme" aria-label="테마 전환">
+        <span class="theme-glyph" aria-hidden="true">🌙</span>
+      </button>
+    </header>
+
+    <div class="scrim" id="navScrim" hidden></div>
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar" aria-label="사이드바">
+      <div class="sidebar__brand">
+        <span class="sidebar__logo" aria-hidden="true">T</span>
+        <span class="sidebar__brand-text">
+          <span class="sidebar__title">Today Planner</span>
+          <span class="sidebar__subtitle">오늘을 위한 작은 습관</span>
+        </span>
+      </div>
+
+      <nav class="nav" aria-label="주요 메뉴">
+        <a class="nav__item" href="#/dashboard" data-view="dashboard">
+          <span class="nav__icon" aria-hidden="true">🏠</span><span>대시보드</span>
+        </a>
+        <a class="nav__item" href="#/tasks" data-view="tasks">
+          <span class="nav__icon" aria-hidden="true">✓</span><span>할 일 관리</span>
+        </a>
+        <a class="nav__item" href="#/events" data-view="events">
+          <span class="nav__icon" aria-hidden="true">📅</span><span>일정 관리</span>
+        </a>
+        <a class="nav__item" href="#/stats" data-view="stats">
+          <span class="nav__icon" aria-hidden="true">📊</span><span>통계</span>
+        </a>
+        <a class="nav__item" href="#/settings" data-view="settings">
+          <span class="nav__icon" aria-hidden="true">⚙️</span><span>설정</span>
+        </a>
+      </nav>
+
+      <div class="sidebar__footer">
+        <button type="button" class="theme-toggle" id="themeToggle" aria-pressed="false">
+          <span class="theme-toggle__track"><span class="theme-toggle__thumb"></span></span>
+          <span class="theme-toggle__label">다크 모드</span>
+        </button>
+        <p class="sidebar__quote" id="sidebarQuote">작은 한 걸음이 하루를 바꿔요.</p>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <main class="main" id="main" tabindex="-1"></main>
+  </div>
+
+  <div class="modal-root" id="modalRoot" hidden></div>
+  <div class="toast-root" id="toastRoot" aria-live="polite"></div>
+
+  <script src="js/utils.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/calendar.js"></script>
+  <script src="js/views.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
