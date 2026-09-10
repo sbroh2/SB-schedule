@@ -180,19 +180,21 @@
     return "";
   }
 
-  /* Deadline status of a task relative to `ref` (default now). Tasks in this
-     app are always "today" items, so the window is within the day:
-       "overdue"   due time already passed          🔴 마감
-       "soon"      due within the next 60 minutes    🟡 마감 임박
-       "today"     has a due time later today        🟠 오늘 마감
-       "scheduled" a future recurring occurrence     🔁 예정
-       "none"      done, or no due time                                  */
+  /* Deadline status of a task relative to `ref` (default now), keyed on the
+     task's own work date (taskDate):
+       "scheduled" taskDate is in the future            🔁 예정
+       "overdue"   taskDate is in the past, OR today's due time has passed  🔴 마감
+       "soon"      taskDate is today and due within 60m  🟡 마감 임박
+       "today"     taskDate is today with a later due time 🟠 오늘 마감
+       "none"      done, or today with no due time                        */
   function taskDueStatus(t, ref) {
     if (!t || t.done) return "none";
     var now = ref || new Date();
-    if (t.nextOccurrence && isKey(t.nextOccurrence) && t.nextOccurrence > dateKey(now)) {
-      return "scheduled";
-    }
+    var todayKey = dateKey(now);
+    var td = isKey(t.taskDate) ? t.taskDate
+      : (isKey(t.nextOccurrence) ? t.nextOccurrence : todayKey);
+    if (td > todayKey) return "scheduled";
+    if (td < todayKey) return "overdue";
     if (!isHHMM(t.due)) return "none";
     var dueMin = toMinutes(t.due);
     if (dueMin == null) return "none";

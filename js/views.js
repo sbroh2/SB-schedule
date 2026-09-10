@@ -81,11 +81,13 @@
       case "overdue": return el("span", { class: "chip chip--overdue", text: "🔴 마감" });
       case "soon": return el("span", { class: "chip chip--soon", text: "🟡 마감 임박" });
       case "today": return el("span", { class: "chip chip--today", text: "🟠 오늘 마감" });
-      case "scheduled":
+      case "scheduled": {
+        var when = U.isKey(t.taskDate) ? t.taskDate : t.nextOccurrence;
         return el("span", {
           class: "chip chip--recur",
-          text: "🔁 " + U.formatDateShort(t.nextOccurrence) + " 예정"
+          text: "🔁 " + U.formatDateShort(when) + " 예정"
         });
+      }
       default: return null;
     }
   }
@@ -437,7 +439,7 @@
         })
       ]));
 
-      var pressing = S.get().tasks.filter(function (t) {
+      var pressing = S.tasksToday().filter(function (t) {
         var s = U.taskDueStatus(t, now);
         return s === "overdue" || s === "soon";
       }).length;
@@ -512,7 +514,7 @@
 
     /* ----- todo panel ----- */
     function paintTodo() {
-      var all = S.tasksSorted();
+      var all = S.tasksToday();
       U.clear(todoHead).appendChild(panelHeader(
         "📋 오늘의 할 일", all.length ? S.taskStats().done + " / " + all.length : "0",
         el("button", {
@@ -629,8 +631,10 @@
     ["today", "오늘"], ["due-soon", "마감 임박"]
   ];
 
+  // "오늘" filter: today's work plus anything still open from earlier — never
+  // future-dated (recurrence) occurrences.
   function isActiveToday(t) {
-    return !t.nextOccurrence || t.nextOccurrence <= U.dateKey();
+    return U.isKey(t.taskDate) ? t.taskDate <= U.dateKey() : true;
   }
 
   /* filter + free-text search over title and note (case-insensitive) */
@@ -718,10 +722,9 @@
 
     function paintList() {
       U.clear(card);
-      var st = S.taskStats();
-      countEl.textContent = "완료 " + st.done + " · 남음 " + st.remaining;
-
       var list = filterTasks(S.tasksSorted(), tasksFilter, tasksSearch);
+      var doneN = list.filter(function (t) { return t.done; }).length;
+      countEl.textContent = "완료 " + doneN + " · 남음 " + (list.length - doneN);
       if (!list.length) {
         if (tasksSearch.trim()) {
           card.appendChild(emptyState(

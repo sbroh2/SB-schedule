@@ -35,16 +35,25 @@
   }
 
   /* --------------------------- normalization --------------------------- */
-  function normTask(raw) {
+  /* `fallbackDate` is used only to migrate pre-1.5 tasks that have no taskDate:
+     an existing task with a saved nextOccurrence keeps that date, everything
+     else inherits the day it was last active on (or today). New tasks always
+     pass an explicit taskDate, so this fallback never affects them. */
+  function normTask(raw, fallbackDate) {
     if (!raw || typeof raw !== "object") return null;
     var title = typeof raw.title === "string" ? raw.title.trim() : "";
     if (!title) return null;
     var done = !!raw.done;
+    var taskDate = U.isKey(raw.taskDate) ? raw.taskDate
+      : (U.isKey(raw.nextOccurrence) ? raw.nextOccurrence
+        : (U.isKey(fallbackDate) ? fallbackDate : U.dateKey()));
     return {
       id: typeof raw.id === "string" && raw.id ? raw.id : U.uid(),
       title: title.slice(0, 200),
       priority: PRIORITIES.indexOf(raw.priority) >= 0 ? raw.priority : "normal",
       done: done,
+      // taskDate = the day this task is actually meant to be done (added in 1.5).
+      taskDate: taskDate,
       due: U.isHHMM(raw.due) ? raw.due : "",
       note: typeof raw.note === "string" ? raw.note.slice(0, 500) : "",
       // Recurrence (added in Phase 1). Older records simply lack these keys and
@@ -91,12 +100,17 @@
   function coerce(data) {
     var d = defaults();
     if (!data || typeof data !== "object") return d;
-    d.tasks = Array.isArray(data.tasks) ? data.tasks.map(normTask).filter(Boolean) : [];
+    // Resolve the migration fallback date first so pre-1.5 tasks without a
+    // taskDate inherit the day the planner was last active on.
+    var fallbackDate = U.isKey(data.lastActiveDate) ? data.lastActiveDate : U.dateKey();
+    d.tasks = Array.isArray(data.tasks)
+      ? data.tasks.map(function (r) { return normTask(r, fallbackDate); }).filter(Boolean)
+      : [];
     d.events = Array.isArray(data.events) ? data.events.map(normEvent).filter(Boolean) : [];
     d.notes = typeof data.notes === "string" ? data.notes.slice(0, 8000) : "";
     d.noteSavedAt = typeof data.noteSavedAt === "string" ? data.noteSavedAt : null;
     d.history = normHistory(data.history);
-    d.lastActiveDate = U.isKey(data.lastActiveDate) ? data.lastActiveDate : U.dateKey();
+    d.lastActiveDate = fallbackDate;
     d.settings = {
       theme: (data.settings && data.settings.theme === "dark") ? "dark" : "light"
     };
@@ -141,18 +155,27 @@
 
   /* ------------------------------ rollover --------------------------- */
   /* Called on startup and every clock tick. When the calendar day has moved
-     past lastActiveDate we archive that day's numbers, drop finished tasks,
-     carry incomplete ones forward, and stamp the new day. */
+     past lastActiveDate we archive the ended day's numbers (its own tasks
+     only), drop finished tasks, pull still-open past-due tasks onto today, and
+     stamp the new day. Future-dated tasks (recurrence occurrences) are left
+     untouched so they surface on their own day. */
   function rolloverIfNeeded() {
     var today = U.dateKey();
     if (state.lastActiveDate === today) return false;
 
     var prev = state.lastActiveDate;
-    var total = state.tasks.length;
-    var completed = state.tasks.filter(function (t) { return t.done; }).length;
-    if (total > 0) state.history[prev] = { completed: completed, total: total };
+    var dayTasks = state.tasks.filter(function (t) { return t.taskDate === prev; });
+    if (dayTasks.length > 0) {
+      state.history[prev] = {
+        completed: dayTasks.filter(function (t) { return t.done; }).length,
+        total: dayTasks.length
+      };
+    }
 
     state.tasks = state.tasks.filter(function (t) { return !t.done; });
+    state.tasks.forEach(function (t) {
+      if (U.isKey(t.taskDate) && t.taskDate < today) t.taskDate = today;
+    });
     state.lastActiveDate = today;
     pruneHistory();
     persist();
@@ -170,6 +193,7 @@
     var t = normTask({
       title: data.title,
       priority: data.priority,
+      taskDate: U.isKey(data.taskDate) ? data.taskDate : U.dateKey(),
       due: data.due,
       note: data.note,
       recurrence: data.recurrence,
@@ -204,26 +228,32 @@
     });
   }
 
-  /* When a repeating task is completed, drop in the next occurrence — but only
-     if one isn't already waiting. This guard means a page refresh or an
-     un-check / re-check never piles up duplicates: at most one open task per
-     recurrence chain exists at any time. */
+  /* When a repeating task is completed, drop in the next occurrence. The next
+     date is computed from the completed task's own taskDate (not "now"), and we
+     skip creation if any task in the same recurrence chain already carries that
+     date. That makes generation idempotent: refreshing or re-checking never
+     piles up duplicates. */
   function spawnNextOccurrence(s, parent) {
     if (!parent.recurrenceId) parent.recurrenceId = U.uid();
-    var pending = s.tasks.some(function (x) {
-      return x.id !== parent.id && x.recurrenceId === parent.recurrenceId && !x.done;
+    var base = U.isKey(parent.taskDate) ? U.parseKey(parent.taskDate) : new Date();
+    var nextKey = U.nextRecurrenceDate(parent.recurrence, base);
+    if (!U.isKey(nextKey)) return;
+
+    var exists = s.tasks.some(function (x) {
+      return x.recurrenceId === parent.recurrenceId && x.taskDate === nextKey;
     });
-    if (pending) return;
-    var todayKey = U.dateKey();
-    var next = U.nextRecurrenceDate(parent.recurrence, new Date());
+    if (exists) return;
+
+    parent.nextOccurrence = nextKey;
     var child = normTask({
       title: parent.title,
       priority: parent.priority,
+      taskDate: nextKey,
       due: parent.due,
       note: parent.note,
       recurrence: parent.recurrence,
       recurrenceId: parent.recurrenceId,
-      nextOccurrence: (next && next > todayKey) ? next : ""
+      nextOccurrence: nextKey
     });
     if (child) s.tasks.unshift(child);
   }
@@ -310,7 +340,14 @@
     var parsed = JSON.parse(text);      // SyntaxError on bad JSON — caller handles
     var payload = readBackup(parsed);   // Error("BAD_BACKUP")    — caller handles
     state = coerce(payload);
-    state.lastActiveDate = U.dateKey();
+    // Same treatment a midnight rollover would give: still-open tasks dated
+    // before today are pulled onto today; done and future-dated tasks are left
+    // exactly as backed up.
+    var today = U.dateKey();
+    state.tasks.forEach(function (t) {
+      if (!t.done && U.isKey(t.taskDate) && t.taskDate < today) t.taskDate = today;
+    });
+    state.lastActiveDate = today;
     persist();
     document.dispatchEvent(new CustomEvent("tp:change"));
   }
@@ -341,12 +378,25 @@
     });
   }
 
+  /* tasks whose work date is `key` (default today), in display order */
+  function tasksForDate(key) {
+    key = U.isKey(key) ? key : U.dateKey();
+    return tasksSorted().filter(function (t) { return t.taskDate === key; });
+  }
+  function tasksToday() { return tasksForDate(U.dateKey()); }
+
   function topTasks() {
-    return tasksSorted().filter(function (t) { return t.priority === "top"; });
+    var today = U.dateKey();
+    return tasksSorted().filter(function (t) {
+      return t.priority === "top" && t.taskDate === today;
+    });
   }
 
+  /* Today-only task stats — future recurrence occurrences never count toward
+     today's totals or completion rate. */
   function taskStats() {
-    var ts = state.tasks;
+    var today = U.dateKey();
+    var ts = state.tasks.filter(function (t) { return t.taskDate === today; });
     var done = ts.filter(function (t) { return t.done; }).length;
     var remaining = ts.filter(function (t) { return !t.done; });
     var by = { top: 0, high: 0, normal: 0 };
@@ -452,6 +502,8 @@
     storageBytes: storageBytes,
 
     tasksSorted: tasksSorted,
+    tasksForDate: tasksForDate,
+    tasksToday: tasksToday,
     topTasks: topTasks,
     taskStats: taskStats,
     eventsOn: eventsOn,
