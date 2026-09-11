@@ -211,6 +211,9 @@
       if (!t) return;
       if (patch.title != null) t.title = String(patch.title).trim().slice(0, 200) || t.title;
       if (patch.priority && PRIORITIES.indexOf(patch.priority) >= 0) t.priority = patch.priority;
+      // taskDate (Phase 1.5) — only overwritten with a valid YYYY-MM-DD key, so
+      // an edit that omits it (or sends a blank) leaves the stored date intact.
+      if (U.isKey(patch.taskDate)) t.taskDate = patch.taskDate;
       if (patch.due != null) t.due = U.isHHMM(patch.due) ? patch.due : "";
       if (patch.note != null) t.note = String(patch.note).slice(0, 500);
       if (patch.recurrence != null) {

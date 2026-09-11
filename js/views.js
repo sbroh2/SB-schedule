@@ -83,9 +83,11 @@
       case "today": return el("span", { class: "chip chip--today", text: "🟠 오늘 마감" });
       case "scheduled": {
         var when = U.isKey(t.taskDate) ? t.taskDate : t.nextOccurrence;
+        // 🔁 for a repeating occurrence, 📅 for a one-off task simply dated ahead.
+        var icon = (t.recurrence && t.recurrence !== "none") ? "🔁 " : "📅 ";
         return el("span", {
           class: "chip chip--recur",
-          text: "🔁 " + U.formatDateShort(when) + " 예정"
+          text: icon + U.formatDateShort(when) + " 예정"
         });
       }
       default: return null;
@@ -212,6 +214,16 @@
       prio.appendChild(el("label", { for: id, text: o[1] }));
     });
 
+    // 업무 날짜 (Phase 1.5) — HTML date input, defaults to today. On edit it
+    // shows the task's saved taskDate; legacy tasks without one fall back to
+    // today (store already backfills taskDate on load, so this is belt-and-braces).
+    var dateInput = el("input", { type: "date", id: "tf-date" });
+    dateInput.value = U.isKey(data.taskDate) ? data.taskDate : U.dateKey();
+    var dateField = el("div", { class: "field" }, [
+      el("label", { class: "field__label", for: "tf-date", text: "업무 날짜" }),
+      dateInput
+    ]);
+
     var dueInput = el("input", { type: "time", id: "tf-due" });
     dueInput.value = data.due;
     var noteInput = el("textarea", { id: "tf-note", maxlength: "500", placeholder: "메모 (선택)" });
@@ -228,6 +240,7 @@
 
     var form = el("form", { novalidate: "novalidate" }, [
       titleField,
+      dateField,
       el("div", { class: "field" }, [el("label", { class: "field__label", text: "우선순위" }), prio]),
       el("div", { class: "field" }, [
         el("label", { class: "field__label", for: "tf-due", text: "마감 시간 (선택)" }), dueInput
@@ -257,6 +270,7 @@
       var recChecked = form.querySelector('input[name="tf-recurrence"]:checked');
       var payload = {
         title: title,
+        taskDate: U.isKey(dateInput.value) ? dateInput.value : U.dateKey(),
         priority: checked ? checked.value : "normal",
         due: dueInput.value,
         note: noteInput.value.trim(),
@@ -631,10 +645,12 @@
     ["today", "오늘"], ["due-soon", "마감 임박"]
   ];
 
-  // "오늘" filter: today's work plus anything still open from earlier — never
-  // future-dated (recurrence) occurrences.
-  function isActiveToday(t) {
-    return U.isKey(t.taskDate) ? t.taskDate <= U.dateKey() : true;
+  // "오늘" filter: exactly today's work (taskDate === 오늘). Past still-open
+  // tasks are NOT pulled in here — use the "미완료" filter for those — and
+  // future-dated (recurrence) occurrences are excluded too. Legacy tasks with
+  // no taskDate are treated as today's.
+  function isToday(t) {
+    return U.isKey(t.taskDate) ? t.taskDate === U.dateKey() : true;
   }
 
   /* filter + free-text search over title and note (case-insensitive) */
@@ -645,7 +661,7 @@
     else if (f === "top" || f === "high" || f === "normal") {
       out = out.filter(function (t) { return t.priority === f; });
     } else if (f === "today") {
-      out = out.filter(function (t) { return !t.done && isActiveToday(t); });
+      out = out.filter(function (t) { return !t.done && isToday(t); });
     } else if (f === "due-soon") {
       out = out.filter(function (t) {
         var s = U.taskDueStatus(t);
